@@ -4,6 +4,8 @@ using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.DataModel;
 using Amazon.SimpleEmail;
 using Amazon.SimpleEmail.Model;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using App.Models; // Adicione esta linha
 
 namespace App.Controllers
@@ -31,33 +33,62 @@ namespace App.Controllers
         {
             var tamanhoSenha = 6;
             var timestamp = DateTime.UtcNow.Ticks.ToString();
-            var posicaoInicial = timestamp.Length - 3 - tamanhoSenha;
-            var senhaUsoUnico = timestamp.Substring(posicaoInicial, tamanhoSenha);
+            var senhaUsoUnico = timestamp.Substring(timestamp.Length - 3 - tamanhoSenha, tamanhoSenha);
 
-            var sesConfig = new AmazonSimpleEmailServiceConfig
+            var snsConfig = new AmazonSimpleNotificationServiceConfig
             {
                 RegionEndpoint = RegionEndpoint.SAEast1
             };
 
-            using var sesClient = new AmazonSimpleEmailServiceClient(sesConfig);
+            using var snsClient = new AmazonSimpleNotificationServiceClient(snsConfig);
 
-            var fromAddress = new MailAddress("nao-responda@tcc.caioruiz.com", "Carrinho Inteligente");
-            var toAddress = new MailAddress(request.Email);
-            var subject = "Senha de uso único";
-            var body = $"Sua senha de uso único é {senhaUsoUnico}";
+            // Replace all non-letter characters in the email address with "_"
+            var topicName = new string(request.Email.Select(c => char.IsLetter(c) ? c : '_').ToArray());
 
-            var sendRequest = new SendEmailRequest
+            // Check if the topic already exists
+            var existingTopics = await snsClient.ListTopicsAsync();
+            var existingTopic = existingTopics.Topics.FirstOrDefault(t => t.TopicArn.EndsWith($":{topicName}"));
+
+            if (existingTopic == null)
             {
-                Source = fromAddress.Address,
-                Destination = new Destination { ToAddresses = new List<string> { toAddress.Address } },
-                Message = new Message
+                // Create an SNS topic with the modified email as the name
+                var createTopicRequest = new CreateTopicRequest
                 {
-                    Subject = new Content(subject),
-                    Body = new Body
-                    {
-                        Text = new Content(body)
-                    }
-                }
+                    Name = topicName
+                };
+
+                var createTopicResponse = await snsClient.CreateTopicAsync(createTopicRequest);
+                existingTopic = new Topic { TopicArn = createTopicResponse.TopicArn };
+            }
+
+            // Check if the user is already subscribed to the topic
+            var listSubscriptionsRequest = new ListSubscriptionsByTopicRequest
+            {
+                TopicArn = existingTopic.TopicArn
+            };
+
+            var existingSubscription = (await snsClient.ListSubscriptionsByTopicAsync(listSubscriptionsRequest))
+                .Subscriptions.FirstOrDefault(s => s.Endpoint == request.Email);
+
+            if (existingSubscription == null)
+            {
+                // Subscribe the user to the topic
+                var subscribeRequest = new SubscribeRequest
+                {
+                    Protocol = "email",
+                    Endpoint = request.Email,
+                    TopicArn = existingTopic.TopicArn
+                };
+
+                await snsClient.SubscribeAsync(subscribeRequest);
+            }
+
+            // Publish a message to the created or existing topic
+            var publishRequest = new PublishRequest
+            {
+                TopicArn = existingTopic.TopicArn,
+                Subject = "Senha de uso único",
+                Message = $"Sua senha de uso único é {senhaUsoUnico}"
             };
 
             await _context.SaveAsync(new Conta
@@ -68,19 +99,19 @@ namespace App.Controllers
 
             try
             {
-                var response = await sesClient.SendEmailAsync(sendRequest);
+                var response = await snsClient.PublishAsync(publishRequest);
                 var messageId = response.MessageId;
 
                 return Ok(messageId);
             }
             catch (Exception ex)
             {
-                // Tratar erros de envio de e-mail
-                _logger.LogError($"Erro ao enviar e-mail: {ex.Message}");
-                return StatusCode(StatusCodes.Status500InternalServerError, "Erro ao enviar e-mail");
+                // Handle SNS sending errors
+                _logger.LogError($"Erro ao enviar mensagem via SNS: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "Erro ao enviar mensagem via SNS");
             }
         }
-        
+
         [HttpPost("Login", Name = "Login")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]

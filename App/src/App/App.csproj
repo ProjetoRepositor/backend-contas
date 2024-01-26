@@ -16,6 +16,7 @@
         <PackageReference Include="AWSSDK.DynamoDBv2" Version="3.7.300.35" />
         <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.300" />
         <PackageReference Include="AWSSDK.SimpleEmail" Version="3.7.300.39" />
+        <PackageReference Include="AWSSDK.SimpleNotificationService" Version="3.7.300.41" />
     </ItemGroup>
     <ItemGroup>
       <Compile Remove="Models\AlterarSenhaRequest.cs" />
