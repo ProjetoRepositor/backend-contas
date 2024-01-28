@@ -1,9 +1,8 @@
-using System.Net.Mail;
+using System.Security.Cryptography;
+using System.Text;
 using Amazon;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.DataModel;
-using Amazon.SimpleEmail;
-using Amazon.SimpleEmail.Model;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using App.Models; // Adicione esta linha
@@ -24,6 +23,26 @@ namespace App.Controllers
             _logger = logger;
             _context = new DynamoDBContext(dynamoDb);
         }
+        
+        static string HashSenha(string input)
+        {
+            using SHA256 sha256 = SHA256.Create();
+            
+            // Converte a string para bytes
+            byte[] inputBytes = Encoding.UTF8.GetBytes(input);
+
+            // Calcula o hash SHA-256
+            byte[] hashBytes = sha256.ComputeHash(inputBytes);
+
+            // Converte o hash para uma string hexadecimal
+            StringBuilder stringBuilder = new StringBuilder();
+            for (int i = 0; i < hashBytes.Length; i++)
+            {
+                stringBuilder.Append(hashBytes[i].ToString("x2"));
+            }
+
+            return stringBuilder.ToString();
+        } 
 
         [HttpPost("Solicitar", Name = "CriarConta")]
         [ProducesResponseType(StatusCodes.Status201Created)]
@@ -94,7 +113,7 @@ namespace App.Controllers
             await _context.SaveAsync(new Conta
             {
                 Email = request.Email,
-                SenhaUsoUnico = senhaUsoUnico,
+                SenhaUsoUnico = HashSenha(senhaUsoUnico),
             });
 
             try
@@ -121,7 +140,7 @@ namespace App.Controllers
             // Verifique se as credenciais do usuário são válidas (por exemplo, consultando o DynamoDB)
             var user = await _context.LoadAsync<Conta>(loginRequest.Email);
 
-            if (user != null && user.SenhaUsoUnico != null && user.SenhaUsoUnico == loginRequest.Senha)
+            if (user != null && user.SenhaUsoUnico != null && user.SenhaUsoUnico == HashSenha(loginRequest.Senha))
             {
                 await _context.SaveAsync(new Conta
                 {
@@ -150,7 +169,9 @@ namespace App.Controllers
             const int tokenLength = 20;
     
             var authToken = new string(Enumerable.Repeat(chars, tokenLength)
-                .Select(s => s[random.Next(s.Length)]).ToArray());
+                .Select(s => s[random.Next(s.Length)]).ToArray()) + userEmail;
+
+            authToken = HashSenha(authToken);
     
             return authToken;
         }
