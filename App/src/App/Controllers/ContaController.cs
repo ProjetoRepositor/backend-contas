@@ -100,6 +100,11 @@ namespace App.Controllers
                 };
 
                 await snsClient.SubscribeAsync(subscribeRequest);
+                
+                return Ok(new
+                {
+                    Message = "Aceite a inscrição em seu e-mail para continuar"
+                });
             }
 
             // Publish a message to the created or existing topic
@@ -121,7 +126,10 @@ namespace App.Controllers
                 var response = await snsClient.PublishAsync(publishRequest);
                 var messageId = response.MessageId;
 
-                return Ok(messageId);
+                return Created("", new
+                {
+                    Menssage = "Email enviado"
+                });
             }
             catch (Exception ex)
             {
