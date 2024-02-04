@@ -25,6 +25,18 @@ namespace App.Controllers
             _context = new DynamoDBContext(dynamoDb);
         }
 
+        [HttpPost("CadastrarDispositivo")]
+        public async Task<IActionResult> CadstrarDispositivo(DeviceRequest request)
+        {
+            await _context.SaveAsync(new Autorizacao
+            {
+                Email = request.UserEmail,
+                Token = request.DeviceId,
+            });
+            
+            return Created("", request);
+        }
+
         [HttpPost("Solicitar", Name = "CriarConta")]
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
